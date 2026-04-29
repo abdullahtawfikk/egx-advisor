@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --bg: #0f172a; --card: #1e293b; --border: #334155; }
+
+body { background: var(--bg); color: #e2e8f0; font-family: 'Inter', sans-serif; }
+.rtl { direction: rtl; font-family: 'Cairo', sans-serif; }
+
+.action-BUY  { @apply bg-green-500/20 text-green-400 border border-green-500/40; }
+.action-SELL { @apply bg-red-500/20   text-red-400   border border-red-500/40; }
+.action-HOLD { @apply bg-yellow-500/20 text-yellow-400 border border-yellow-500/40; }
+
+.card { @apply rounded-xl border border-slate-700 bg-slate-800/60 backdrop-blur-sm p-4; }
+.stat-label { @apply text-xs text-slate-400 uppercase tracking-wider; }
+.stat-value { @apply text-lg font-semibold text-white; }
