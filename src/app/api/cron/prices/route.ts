@@ -9,11 +9,7 @@ import { EGX30_TICKERS } from '@/lib/tickers';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-export async function GET(req: Request) {
-  const auth = req.headers.get('authorization');
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export async function GET() {
 
   const trading = isTradingHours();
   const newsItems = await fetchNewsFromFeeds();
