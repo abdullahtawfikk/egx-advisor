@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { fetchHistorical, fetchQuote, isTradingHours, formatCairoTime } from '@/lib/prices';
+import type { QuoteResult } from '@/lib/prices';
 import { computeTA } from '@/lib/ta';
 import { makeDecision } from '@/lib/decision';
 import { fetchNewsFromFeeds, newsScoreForTicker } from '@/lib/news';
@@ -10,11 +11,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET() {
-
   const trading = isTradingHours();
   const newsItems = await fetchNewsFromFeeds();
 
-  // Save news
   if (newsItems.length > 0) {
     await supabase.from('news_items').upsert(
       newsItems.map(n => ({ ...n, fetched_at: new Date().toISOString() })),
@@ -26,29 +25,48 @@ export async function GET() {
   for (const ticker of EGX30_TICKERS) {
     try {
       const [bars, quote] = await Promise.all([
-        fetchHistorical(ticker.symbol, 120),
+        fetchHistorical(ticker.symbol, 180),
         fetchQuote(ticker.symbol),
       ]);
-      if (!quote || bars.length < 52) { results.push(`${ticker.symbol}: skip`); continue; }
+
+      // Need at least 30 bars for meaningful TA; use last bar as fallback quote
+      if (bars.length < 20) { results.push(`${ticker.symbol}: skip (bars=${bars.length})`); continue; }
+
+      // Synthesize quote from last bar if live quote unavailable
+      const lastBar = bars[bars.length - 1];
+      const effectiveQuote: QuoteResult = quote ?? {
+        symbol: ticker.symbol,
+        price: lastBar.close,
+        open: lastBar.open,
+        high: lastBar.high,
+        low: lastBar.low,
+        previousClose: bars.length > 1 ? bars[bars.length - 2].close : lastBar.close,
+        change: 0,
+        changePercent: 0,
+        volume: lastBar.volume,
+        marketCap: 0,
+        currency: 'EGP',
+        timestamp: lastBar.date,
+        source: 'Yahoo Historical',
+        sourceUrl: `https://finance.yahoo.com/quote/${ticker.symbol}`,
+      };
 
       const ta = computeTA(bars);
       if (!ta) { results.push(`${ticker.symbol}: ta-fail`); continue; }
 
-      const priceAgeMs = Date.now() - quote.timestamp.getTime();
+      const priceAgeMs = Date.now() - effectiveQuote.timestamp.getTime();
       const isStale = trading && priceAgeMs > 5 * 60 * 1000;
 
-      // Save OHLCV
       await supabase.from('ohlcv').upsert({
         symbol: ticker.symbol,
-        timestamp: quote.timestamp.toISOString(),
-        open: quote.open, high: quote.high, low: quote.low,
-        close: quote.price, volume: quote.volume, source: 'yahoo'
+        timestamp: effectiveQuote.timestamp.toISOString(),
+        open: effectiveQuote.open, high: effectiveQuote.high, low: effectiveQuote.low,
+        close: effectiveQuote.price, volume: effectiveQuote.volume, source: effectiveQuote.source
       }, { onConflict: 'symbol,timestamp', ignoreDuplicates: true });
 
       const { score: newsScore, reasons: newsReasons } = newsScoreForTicker(ticker.symbol, newsItems);
-      const decision = makeDecision(ta, quote, newsScore, 0, newsReasons, isStale);
+      const decision = makeDecision(ta, effectiveQuote, newsScore, 0, newsReasons, isStale);
 
-      // Save recommendation
       await supabase.from('recommendations').insert({
         symbol: ticker.symbol,
         generated_at: new Date().toISOString(),
@@ -58,15 +76,15 @@ export async function GET() {
         stop_loss: decision.stopLoss, take_profit: decision.takeProfit,
         confidence: decision.confidence, score: decision.score,
         ta_score: decision.taScore, news_score: decision.newsScore, fa_score: decision.faScore,
-        reasons: decision.reasons, current_price: quote.price,
-        price_source: quote.source, price_timestamp: quote.timestamp.toISOString(),
+        reasons: decision.reasons, current_price: effectiveQuote.price,
+        price_source: effectiveQuote.source, price_timestamp: effectiveQuote.timestamp.toISOString(),
         is_stale: isStale,
-        raw_ta: { rsi: ta.rsi, macd: ta.macd, macdHist: ta.macdHist, bb_pos: ((quote.price - ta.bbLower) / (ta.bbUpper - ta.bbLower || 1) * 100).toFixed(1), adx: ta.adx, volumeZscore: ta.volumeZscore }
+        raw_ta: { rsi: ta.rsi, macd: ta.macd, macdHist: ta.macdHist, adx: ta.adx, volumeZscore: ta.volumeZscore }
       });
 
-      results.push(`${ticker.symbol}: ${decision.action} (score=${decision.score})`);
+      results.push(`${ticker.symbol}: ${decision.action} (score=${decision.score}, bars=${bars.length})`);
     } catch (e) {
-      results.push(`${ticker.symbol}: error – ${e}`);
+      results.push(`${ticker.symbol}: error — ${e}`);
     }
   }
 
