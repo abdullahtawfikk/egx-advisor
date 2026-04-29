@@ -4,5 +4,17 @@ const nextConfig = {
     serverComponentsExternalPackages: ['technicalindicators', 'yahoo-finance2']
   },
   webpack: (config) => {
-    // yahoo-finance2 ESM build imports a test-only helper that doesn't exist at build time
-    config.resolve.alias['@gadicc/fetch-mock-cache/stores/fs.ts'] =
+    config.resolve.alias['@gadicc/fetch-mock-cache/stores/fs.ts'] = false;
+    config.resolve.alias['@gadicc/fetch-mock-cache'] = false;
+    return config;
+  },
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }]
+      }
+    ];
+  }
+};
+export default nextConfig;
