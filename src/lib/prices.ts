@@ -1,5 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const yahooFinance = require('yahoo-finance2').default ?? require('yahoo-finance2');
+import yahooFinance from 'yahoo-finance2';
 
 export interface QuoteResult {
   symbol: string;
@@ -29,7 +28,8 @@ export interface HistoricalBar {
 
 export async function fetchQuote(symbol: string): Promise<QuoteResult | null> {
   try {
-    const q = await yahooFinance.quote(symbol, {}, { validateResult: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const q = await (yahooFinance as any).quote(symbol, {}, { validateResult: false });
     if (!q || !q.regularMarketPrice) return null;
     return {
       symbol,
@@ -58,9 +58,11 @@ export async function fetchHistorical(symbol: string, days = 120): Promise<Histo
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    const rows = await yahooFinance.historical(symbol, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = await (yahooFinance as any).historical(symbol, {
       period1: startDate, period2: endDate, interval: '1d'
     }, { validateResult: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return rows.map((r: any) => ({
       date: new Date(r.date),
       open: r.open ?? 0,
