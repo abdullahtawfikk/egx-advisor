@@ -1,4 +1,5 @@
-import yahooFinance from 'yahoo-finance2';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const yahooFinance = require('yahoo-finance2').default ?? require('yahoo-finance2');
 
 export interface QuoteResult {
   symbol: string;
@@ -60,7 +61,7 @@ export async function fetchHistorical(symbol: string, days = 120): Promise<Histo
     const rows = await yahooFinance.historical(symbol, {
       period1: startDate, period2: endDate, interval: '1d'
     }, { validateResult: false });
-    return rows.map(r => ({
+    return rows.map((r: any) => ({
       date: new Date(r.date),
       open: r.open ?? 0,
       high: r.high ?? 0,
@@ -76,7 +77,6 @@ export async function fetchHistorical(symbol: string, days = 120): Promise<Histo
 
 export async function fetchMultipleQuotes(symbols: string[]): Promise<Record<string, QuoteResult | null>> {
   const results: Record<string, QuoteResult | null> = {};
-  // Batch in groups of 10 to be polite
   const batchSize = 10;
   for (let i = 0; i < symbols.length; i += batchSize) {
     const batch = symbols.slice(i, i + batchSize);
@@ -92,11 +92,11 @@ export async function fetchMultipleQuotes(symbols: string[]): Promise<Record<str
 /** Cairo trading session: Sun-Thu 10:00-14:30 EET (UTC+2) */
 export function isTradingHours(): boolean {
   const now = new Date();
-  const cairoOffset = 2 * 60; // UTC+2 minutes
+  const cairoOffset = 2 * 60;
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   const cairoMinutes = (utcMinutes + cairoOffset) % (24 * 60);
-  const dayOfWeek = new Date(now.getTime() + cairoOffset * 60000).getUTCDay(); // 0=Sun
-  const isTradingDay = dayOfWeek >= 0 && dayOfWeek <= 4; // Sun=0 to Thu=4
+  const dayOfWeek = new Date(now.getTime() + cairoOffset * 60000).getUTCDay();
+  const isTradingDay = dayOfWeek >= 0 && dayOfWeek <= 4;
   const isOpen = cairoMinutes >= 10 * 60 && cairoMinutes <= 14 * 60 + 30;
   return isTradingDay && isOpen;
 }
