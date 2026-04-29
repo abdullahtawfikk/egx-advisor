@@ -15,8 +15,7 @@
     "react-dom": "^18",
     "recharts": "^2.12.7",
     "swr": "^2.2.5",
-    "technicalindicators": "^3.1.0",
-    "yahoo-finance2": "^2.11.3"
+    "technicalindicators": "^3.1.0"
   },
   "devDependencies": {
     "@types/node": "^20",

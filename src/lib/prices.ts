@@ -1,5 +1,3 @@
-import yahooFinance from 'yahoo-finance2';
-
 export interface QuoteResult {
   symbol: string;
   price: number;
@@ -26,24 +24,37 @@ export interface HistoricalBar {
   volume: number;
 }
 
+const YF_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  'Accept': 'application/json',
+};
+
 export async function fetchQuote(symbol: string): Promise<QuoteResult | null> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const q = await (yahooFinance as any).quote(symbol, {}, { validateResult: false });
-    if (!q || !q.regularMarketPrice) return null;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+    const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) return null;
+
+    const meta = result.meta;
+    const price = meta.regularMarketPrice ?? meta.previousClose;
+    if (!price) return null;
+
     return {
       symbol,
-      price: q.regularMarketPrice,
-      open: q.regularMarketOpen ?? q.regularMarketPrice,
-      high: q.regularMarketDayHigh ?? q.regularMarketPrice,
-      low: q.regularMarketDayLow ?? q.regularMarketPrice,
-      previousClose: q.regularMarketPreviousClose ?? q.regularMarketPrice,
-      change: q.regularMarketChange ?? 0,
-      changePercent: q.regularMarketChangePercent ?? 0,
-      volume: q.regularMarketVolume ?? 0,
-      marketCap: q.marketCap ?? 0,
-      currency: q.currency ?? 'EGP',
-      timestamp: q.regularMarketTime ? new Date(q.regularMarketTime) : new Date(),
+      price,
+      open: meta.regularMarketOpen ?? price,
+      high: meta.regularMarketDayHigh ?? price,
+      low: meta.regularMarketDayLow ?? price,
+      previousClose: meta.previousClose ?? price,
+      change: meta.regularMarketChange ?? 0,
+      changePercent: meta.regularMarketChangePercent ?? 0,
+      volume: meta.regularMarketVolume ?? 0,
+      marketCap: meta.marketCap ?? 0,
+      currency: meta.currency ?? 'EGP',
+      timestamp: new Date((meta.regularMarketTime ?? Date.now() / 1000) * 1000),
       source: 'Yahoo Finance',
       sourceUrl: `https://finance.yahoo.com/quote/${symbol}`,
     };
@@ -55,22 +66,38 @@ export async function fetchQuote(symbol: string): Promise<QuoteResult | null> {
 
 export async function fetchHistorical(symbol: string, days = 120): Promise<HistoricalBar[]> {
   try {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows = await (yahooFinance as any).historical(symbol, {
-      period1: startDate, period2: endDate, interval: '1d'
-    }, { validateResult: false });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return rows.map((r: any) => ({
-      date: new Date(r.date),
-      open: r.open ?? 0,
-      high: r.high ?? 0,
-      low: r.low ?? 0,
-      close: r.close ?? 0,
-      volume: r.volume ?? 0,
-    }));
+    const range = days <= 60 ? '3mo' : days <= 120 ? '6mo' : '1y';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}`;
+    const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) {
+      console.error(`fetchHistorical ${symbol}: HTTP ${res.status}`);
+      return [];
+    }
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) return [];
+
+    const timestamps: number[] = result.timestamp ?? [];
+    const ohlcv = result.indicators?.quote?.[0] ?? {};
+    const opens: number[] = ohlcv.open ?? [];
+    const highs: number[] = ohlcv.high ?? [];
+    const lows: number[] = ohlcv.low ?? [];
+    const closes: number[] = ohlcv.close ?? [];
+    const volumes: number[] = ohlcv.volume ?? [];
+
+    const bars: HistoricalBar[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (closes[i] == null) continue;
+      bars.push({
+        date: new Date(timestamps[i] * 1000),
+        open: opens[i] ?? closes[i],
+        high: highs[i] ?? closes[i],
+        low: lows[i] ?? closes[i],
+        close: closes[i],
+        volume: volumes[i] ?? 0,
+      });
+    }
+    return bars;
   } catch (err) {
     console.error(`fetchHistorical error for ${symbol}:`, err);
     return [];
@@ -82,8 +109,7 @@ export async function fetchMultipleQuotes(symbols: string[]): Promise<Record<str
   const batchSize = 10;
   for (let i = 0; i < symbols.length; i += batchSize) {
     const batch = symbols.slice(i, i + batchSize);
-    const promises = batch.map(s => fetchQuote(s).then(r => ({ s, r })));
-    const settled = await Promise.allSettled(promises);
+    const settled = await Promise.allSettled(batch.map(s => fetchQuote(s).then(r => ({ s, r }))));
     for (const res of settled) {
       if (res.status === 'fulfilled') results[res.value.s] = res.value.r;
     }
@@ -91,16 +117,13 @@ export async function fetchMultipleQuotes(symbols: string[]): Promise<Record<str
   return results;
 }
 
-/** Cairo trading session: Sun-Thu 10:00-14:30 EET (UTC+2) */
 export function isTradingHours(): boolean {
   const now = new Date();
   const cairoOffset = 2 * 60;
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   const cairoMinutes = (utcMinutes + cairoOffset) % (24 * 60);
   const dayOfWeek = new Date(now.getTime() + cairoOffset * 60000).getUTCDay();
-  const isTradingDay = dayOfWeek >= 0 && dayOfWeek <= 4;
-  const isOpen = cairoMinutes >= 10 * 60 && cairoMinutes <= 14 * 60 + 30;
-  return isTradingDay && isOpen;
+  return dayOfWeek >= 0 && dayOfWeek <= 4 && cairoMinutes >= 600 && cairoMinutes <= 870;
 }
 
 export function formatCairoTime(date: Date): string {
