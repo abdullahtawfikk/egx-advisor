@@ -149,7 +149,7 @@ export function computeTA(bars: HistoricalBar[]): TAResult | null {
   }
 
   // ADX trend strength gate (if weak trend, dampen)
-  if (adx < 20) score = score * 0.6;
+  if (adx < 20) score = score * 0.8; // dampen slightly, not aggressively
 
   const taScore = Math.max(-100, Math.min(100, score));
 
