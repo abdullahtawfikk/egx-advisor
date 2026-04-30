@@ -24,7 +24,7 @@ export interface Decision {
 
 /** Balanced persona thresholds */
 const BUY_THRESHOLD  =  40;
-const SELL_THRESHOLD = -10;
+const SELL_THRESHOLD = -8;  // calibrated for composite score range
 
 export function makeDecision(
   ta: TAResult,
