@@ -42,7 +42,8 @@ export function makeDecision(
 
   // Low liquidity gate (< 500 k EGP volume)
   const egpVolume = quote.volume * quote.price;
-  if (egpVolume < 500_000) {
+  // Only check when volume > 0; zero means market-closed data, not truly illiquid
+  if (quote.volume > 0 && egpVolume < 500_000) {
     riskGates.push({ triggered: true, reason: `Low liquidity: ${(egpVolume/1000).toFixed(0)}k EGP daily volume < 500k threshold` });
   }
 
